@@ -2,11 +2,101 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=360px, initial-scale=1">
-<meta name="theme-color" content="#0b1220">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Полёт на розовой виверне</title>
+<style>
+:root{--sky:#bfe3ff;--cloud:#fff;--wing:#f3a8c8;--body:#e779ad;--gold:#f6c945;--ui:#22303f}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+body{background:var(--sky);font-family:system-ui,sans-serif;overflow:hidden;touch-action:none}
+#wrap{position:fixed;inset:0}
+#game{width:100%;height:100%;display:block}
+#ui{position:fixed;top:10px;left:10px;right:10px;display:flex;gap:10px;pointer-events:none;color:var(--ui);font-weight:700;font-size:16px;text-shadow:0 1px 2px #fff8}
+#ui span{background:#ffffffcc;padding:4px 10px;border-radius:12px}
+#msg{position:fixed;inset:0;display:grid;place-items:center;text-align:center;background:#0b1220d0;color:#fff;padding:20px}
+#msg.hidden{display:none}
+#msg h1{font-size:clamp(22px,7vw,40px);margin-bottom:10px;color:var(--wing)}
+#msg p{max-width:480px;margin:0 auto 18px;line-height:1.5}
+button{font:inherit;padding:12px 26px;border:0;border-radius:999px;background:var(--body);color:#fff;font-weight:700;cursor:pointer;touch-action:manipulation}
+button:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+#start{font-size:18px}
+#pad{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:space-between;padding:12px 14px 18px;pointer-events:none}
+#pad .grp{position:relative;width:64px;height:64px;pointer-events:auto}
+.pbtn{position:absolute;width:64px;height:64px;border-radius:18px;background:#ffffffcc;font-size:24px;color:var(--ui);border:0;display:grid;place-items:center;user-select:none;-webkit-user-select:none}
+.pbtn:active{background:var(--gold)}
+.pbtn:focus{outline:none}
+@media(min-width:768px){#pad{opacity:.55}}
+</style>
+</head>
 <body>
-<canvas id="game" aria-label="Игровое поле: виверна летит над облаками"></canvas>
+<div id="wrap"><canvas id="game"></canvas></div>
+<div id="ui" aria-live="polite"><span id="score">Кольца: 0</span><span id="dist">0 м</span><span id="best-kept" hidden></span></div>
+<div id="pad">
+<div class="grp">
+<button class="pbtn" id="up" aria-label="Взмах вверх" style="left:0;bottom:0">▲</button>
+<button class="pbtn" id="down" aria-label="Взмах вниз" style="left:0;bottom:74px">▼</button>
+</div>
+<button class="pbtn" id="flap" aria-label="Взмахнуть крыльями" style="position:static;width:64px;height:64px">🞂</button>
+</div>
+<div id="msg">
+<div>
+<h1>Полёт на розовой виверне</h1>
+<p>Взмахивай крыльями, чтобы удерживать высоту, и пролетай сквозь золотые кольца. Тучи и скалы прятать темнее — держись выше!
+На клавиатуре: ↑ ↓ взмахи, Пробел — резкий взлёт.</p>
+<button id="start">Покорить небо</button>
+</div>
+</div>
+<script>
+const cvs=document.getElementById('game'),ctx=cvs.getContext('2d');
+let W,H,dpr;
+function resize(){dpr=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;cvs.width=W*dpr;cvs.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0)}
+addEventListener('resize',resize);resize();
+const G=.0022,FLAP=-.62,FLAPBIG=-.95;
+yr;const R=Math.random;
+const K={up:false,down:false};
+let game=null;
+function rings(n){return Array.from({length:n},(_,i)=>({x:0,gy:0,gap:1,passed:false}))}
+function newRing(prevX){return{x:prevX+380+R()*260,gy:170+R()*(H-340),gap:150+R()*60,passed:false}}
+function makeRings(){const arr=[];let x=W+400;for(let i=0;i<5;i++){arr.push(newRing(x));x=arr.at(-1).x}return arr}
+var y=0,v=0,scroll=0,dist=0,score=0,clouds=[],dead=false;
+function startGame(){game={y:H/2,v:0,scroll:0,dist:0,score:0,rings:makeRings(),clouds:Array.from({length:7},()=>({x:R()*W,y:R()*H,s:30+R()*40,o:R()*40,vx:.2+R()*.5}))};dead=false;document.getElementById('msg').classList.add('hidden')}
+function flap(big){if(!game||dead)return;game.v=big?FLAPBIG:FLAP}
+let t=0;
+const flight=(t)=>{requestAnimationFrame(tick)}
+function tick(now){t=now;if(game&&!dead)update();draw();requestAnimationFrame(tick)}
+requestAnimationFrame((x)=>{t=x;requestAnimationFrame(tick)});
+function update(){const g=game;g.v+=G*Math.max(300,innerHeight);g.y+=g.v;g.scroll+=3.2;g.dist+=3.2*G;
+if(K.up)g.v-=.18;if(K.down)g.v+=.22;
+if(g.y<20){g.y=20;g.v=Math.max(g.v,0)}
+if(g.y>H-40){die();return}
+for(const r of g.rings){ if(r.x<0){Object.assign(r,newRing(g.scroll+120+g.rings.reduce((m,q)=>Math.max(m,q.x),0)-g.scroll))} }
+let maxX=0;for(const r of g.rings)maxX=Math.max(maxX,r.x);
+for(const r of g.rings){ if(r.x-g.scroll< -60){r.x=maxX+380+R()*260;maxX=r.x;r.passed=false}
+ if(!r.passed&&Math.abs(r.x-g.scroll-90)<40){if(Math.abs(r.gy-g.y)<r.gap/2){r.passed=true;g.score++}else if(r.x-g.scroll<50&&r.x-g.scroll>0){}}
+}
+for(const c of g.clouds){c.x-=c.vx;if(c.x<-c.s*2.2){c.x=W+c.s;c.y=R()*H}}
+document.getElementById('score').textContent='Кольца: '+g.score;
+document.getElementById('dist').textContent=Math.floor(g.dist)+' м';
+}
+function die(){dead=true;const m=document.getElementById('msg');m.querySelector('h1').textContent='Виверна сбилась!';m.querySelector('p').textContent='Кольца: '+game.score+' · дистанция: '+Math.floor(game.dist)+' м';m.querySelector('button').textContent='Ещё полёт';m.classList.remove('hidden')}
+function draw(){const g=game||{y:H/2,rings:[],clouds:[],scroll:0};
+const sky=ctx.createLinearGradient(0,0,0,H);sky.addColorStop(0,'#7cc4ff');sky.addColorStop(1,'#dff1ff');ctx.fillStyle=sky;ctx.fillRect(0,0,W,H);
+ctx.fillStyle='#ffffff55';for(const c of g.clouds||[]){ctx.beginPath();ctx.ellipse(c.x,c.y,c.s*1.6,c.s*.55,0,0,7);ctx.fill()}
+if(game){for(const r of g.rings){const x=r.x-g.scroll;if(x>-80&&x<W+80){ctx.strokeStyle=r.passed?'#9ec8a4':'#f6c945';ctx.lineWidth=10;ctx.beginPath();ctx.ellipse(x+40,r.gy,16,r.gap/2,0,0,7);ctx.stroke()}}
+const px=90;ctx.save();ctx.translate(px,game.y);ctx.rotate(Math.max(-.5,Math.min(.8,game.v*.06)));
+const wob=Math.sin(t/60)*(game.v<0?1:0);
+ctx.fillStyle='#e779ad';ctx.beginPath();ctx.ellipse(0,0,34,20,0,0,7);ctx.fill();
+ctx.fillStyle='#f3a8c8';ctx.beginPath();ctx.moveTo(6,0);ctx.lineTo(46,-8);ctx.lineTo(46,8);ctx.closePath();ctx.fill();
+ctx.beginPath();ctx.moveTo(0,-4);ctx.lineTo(-30,-26-wob*10);ctx.lineTo(10,6);ctx.closePath();ctx.fill();
+ctx.beginPath();ctx.moveTo(0,4);ctx.lineTo(-30,26+wob*10);ctx.lineTo(10,-6);ctx.closePath();ctx.fill();
+ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(24,-4,4,0,7);ctx.fill();ctx.fillStyle='#22303f';ctx.beginPath();ctx.arc(25,-4,2,0,7);ctx.fill();
+ctx.fillStyle='#c05c8c';ctx.beginPath();ctx.moveTo(-30,0);ctx.lineTo(-58,-6);ctx.lineTo(-58,6);ctx.closePath();ctx.fill();
+ctx.restore();if(dead){}}}
+addEventListener('keydown',e=>{if(e.code==='ArrowUp'){K.up=true;flap(false)}if(e.code==='Space'){e.preventDefault();flap(true)}if(e.code==='ArrowDown')K.down=true;if(e.code==='Enter'&&!game||dead&&e.code==='Enter')startGame()});
+addEventListener('keyup',e=>{if(e.code==='ArrowUp')K.up=false;if(e.code==='ArrowDown')K.down=false});
+const bind=(id,f,down,up)=>{const b=document.getElementById(id);b.addEventListener('pointerdown',e=>{e.preventDefault();f()});b.addEventListener('pointerup',()=>up&&up())};
+bind('up',()=>flap(false));bind('down',()=>{});bind('flap',()=>flap(false));
+document.getElementById('start').addEventListener('click',startGame);
+</script>
 </body>
 </html>
-<!-- PLACEHOLDER -->
